@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sync"
 	"time"
 )
@@ -40,34 +39,26 @@ func ElectionControler(in chan int) {
 	temp.tipo = 3
 	chans[3] <- temp
 
-	time.Sleep(6 * time.Second)
-
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	numeroAleatorio := r.Intn(4) // Gera um número entre 0 e 3
-	temp.tipo = 2
-	chans[numeroAleatorio] <- temp
-
 	for {
-		time.Sleep(4 * time.Second)
 		control := <-in 
 
-		// Nova eleicao
 		if(control == 1) {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			numeroAleatorio := r.Intn(4)
-			temp.tipo = 1
-			chans[numeroAleatorio] <- temp
+			falha_eleicao(3, temp)
 		}
 
-		// Nova falha
-		if(control == 3) {
-			time.Sleep(2 * time.Second)
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			numeroAleatorio := r.Intn(4) 
-			temp.tipo = 2
-			chans[numeroAleatorio] <- temp
+		if(control == 2) {
+			falha_eleicao(0, temp)
 		}
-	
+
+		if(control == 3) {
+			temp.tipo = 4
+			for _, ch := range chans {
+				time.Sleep(1 * time.Second)
+				ch <- temp
+			}
+			return
+		}
+
 	}
 }
 
@@ -84,7 +75,7 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 		// Eleicao
 		case 1:
 			{
-				time.Sleep(2 * time.Second)
+				time.Sleep(1 * time.Second)
 				if !bFailed { // Se eu nao falhei posso participar da eleicao
 					if temp.corpo[TaskId-1] != TaskId { // Se ainda nao deu a volta no anel
 						temp.corpo[TaskId-1] = TaskId
@@ -103,11 +94,12 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 						temp.corpo[1] = 0
 						temp.corpo[2] = 0
 						temp.corpo[3] = 0
+						fmt.Printf("%2d: VENCEDOR DA ELEIÇÃO - [%2d ]\n", TaskId, temp.vencedor)
 						out <- temp
 						//controle <- 2
 					}
 					} else {
-						fmt.Printf("%2d: Estou falho não posso pariticpar", TaskId)
+						fmt.Printf("%2d: Estou falho, não posso pariticpar da eleição\n", TaskId)
 						out <- temp
 					}
 			}
@@ -115,38 +107,54 @@ func ElectionStage(TaskId int, in chan mensagem, out chan mensagem, leader int) 
 		// Falha
 		case 2:
 			{
-				time.Sleep(2 * time.Second)
+				time.Sleep(1 * time.Second)
 				bFailed = true
-				fmt.Printf("%2d: falhei %v \n", TaskId, bFailed)
-				if TaskId == actualLeader {
-					fmt.Printf("%2d: Sou o lider? Sim\n", TaskId)
-					controle <- 1
-				} else {
-					fmt.Printf("%2d: Sou o lider? Não\n", TaskId)
-					temp.tipo = 3
-					controle <- 3
-					out <- temp
-				}
+				fmt.Printf("%2d: Falhei\n", TaskId)
 			}
 
 		// Roda Processo
 		case 3:
 			{
-				time.Sleep(2 * time.Second)
-				if actualLeader != temp.vencedor && temp.vencedor != 0{
-					actualLeader = temp.vencedor
-				}
-				if !bFailed {
-					fmt.Printf("%2d: Rodando, Líder atual: %d\n", TaskId, actualLeader)
+				time.Sleep(1 * time.Second)
+				if temp.corpo[TaskId-1] != TaskId { // Se ainda nao deu a volta no anel
+					temp.corpo[TaskId-1] = TaskId
+					if actualLeader != temp.vencedor && temp.vencedor != 0{
+						actualLeader = temp.vencedor
+					}
+					if !bFailed {
+						fmt.Printf("%2d: Rodando, Líder atual: %d\n", TaskId, actualLeader)
+					} else {
+						fmt.Printf("%2d: Estou Falho\n", TaskId)
+					}
+					out <- temp
 				} else {
-					fmt.Printf("%2d: Estou Falho\n", TaskId)
+					controle <- actualLeader
 				}
-				out <- temp
 			}
-		
-		fmt.Printf("%2d: Terminei \n", TaskId)
+
+		case 4:
+			{
+				fmt.Printf("%2d: Finalizando Execução...\n", TaskId)
+				return
+			}
 		}
 	}
+}
+
+func falha_eleicao(channel int, temp mensagem) {
+	// Nova falha
+	temp.tipo = 2
+	chans[channel] <- temp
+
+	time.Sleep(2 * time.Second)
+
+	fmt.Printf("[ NOVA ELEIÇÃO ]\n")
+
+	time.Sleep(1 * time.Second)
+
+	// Mensagem de eleicao
+	temp.tipo = 1
+	chans[(channel + 1) % len(chans)] <- temp
 }
 
 func main() {
